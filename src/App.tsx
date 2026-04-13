@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crown, Settings, RotateCcw } from 'lucide-react';
+import { Crown, Settings, RotateCcw, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Constants & Types ---
@@ -87,6 +87,7 @@ export default function App() {
   const [draggingShape, setDraggingShape] = useState<{ shape: Shape, index: number, x: number, y: number, startX: number, startY: number } | null>(null);
   const [clearingLines, setClearingLines] = useState<{ rows: number[], cols: number[] }>({ rows: [], cols: [] });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showInfoMessage, setShowInfoMessage] = useState(false);
   
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -276,6 +277,13 @@ export default function App() {
     };
   }, [draggingShape, handleDragMove, handleDragEnd]);
 
+  useEffect(() => {
+    if (showInfoMessage) {
+      const timer = setTimeout(() => setShowInfoMessage(false), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showInfoMessage]);
+
   const resetGame = () => {
     const emptyGrid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
     setGrid(emptyGrid);
@@ -321,12 +329,20 @@ export default function App() {
             <Crown size={18} className="text-yellow-400 fill-yellow-400" />
             <span className="text-base font-bold">{highScore}</span>
           </div>
-          <button 
-            onClick={() => setIsSettingsOpen(true)}
-            className="p-2.5 bg-black/30 rounded-full border border-white/10 hover:bg-black/40 transition-colors shadow-inner"
-          >
-            <Settings size={22} />
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setShowInfoMessage(true)}
+              className="p-2.5 bg-black/30 rounded-full border border-white/10 hover:bg-black/40 transition-colors shadow-inner"
+            >
+              <Info size={22} />
+            </button>
+            <button 
+              onClick={() => setIsSettingsOpen(true)}
+              className="p-2.5 bg-black/30 rounded-full border border-white/10 hover:bg-black/40 transition-colors shadow-inner"
+            >
+              <Settings size={22} />
+            </button>
+          </div>
         </div>
         
         <div className="text-7xl font-black tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] text-white">
@@ -495,6 +511,20 @@ export default function App() {
                 CLOSE
               </button>
             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Info Message Toast */}
+      <AnimatePresence>
+        {showInfoMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="fixed top-24 left-1/2 -translate-x-1/2 z-[300] bg-white/90 text-[#3E2723] px-6 py-3 rounded-2xl shadow-2xl border border-white font-bold text-center whitespace-nowrap"
+          >
+            Mazen Mohamed & Mostafa Ezzat 🚀
           </motion.div>
         )}
       </AnimatePresence>
