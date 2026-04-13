@@ -46,8 +46,8 @@ self.addEventListener('fetch', (event) => {
       return fetch(event.request).then((networkResponse) => {
         // Only cache successful responses
         if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-          // Check if it's our external image seed
-          if (event.request.url.includes('picsum.photos')) {
+          // Check if it's our external image icons
+          if (event.request.url.includes('placehold.co')) {
              const responseToCache = networkResponse.clone();
              caches.open(CACHE_NAME).then((cache) => {
                cache.put(event.request, responseToCache);
