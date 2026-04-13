@@ -86,6 +86,7 @@ export default function App() {
   const [gameOver, setGameOver] = useState(false);
   const [draggingShape, setDraggingShape] = useState<{ shape: Shape, index: number, x: number, y: number, startX: number, startY: number } | null>(null);
   const [clearingLines, setClearingLines] = useState<{ rows: number[], cols: number[] }>({ rows: [], cols: [] });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -306,30 +307,39 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#A07855] flex flex-col items-center p-4 font-sans text-white select-none overflow-hidden touch-none">
+    <div className="min-h-screen bg-[#A07855] flex flex-col items-center p-4 font-sans text-white select-none overflow-hidden touch-none relative">
+      {/* Wood Grain Texture Overlay */}
+      <div className="absolute inset-0 opacity-20 pointer-events-none z-0" style={{
+        backgroundImage: 'url("https://www.transparenttextures.com/patterns/wood-pattern.png")',
+        backgroundSize: '400px'
+      }} />
+
       {/* Header */}
-      <header className="w-full max-w-md flex flex-col items-center gap-2 mb-6">
+      <header className="w-full max-w-md flex flex-col items-center gap-1 mb-4 z-10">
         <div className="w-full flex justify-between items-center px-2">
-          <div className="flex items-center gap-1 bg-black/20 px-3 py-1 rounded-full border border-white/10">
-            <Crown size={16} className="text-yellow-400 fill-yellow-400" />
-            <span className="text-sm font-bold">{highScore}</span>
+          <div className="flex items-center gap-1 bg-black/30 px-4 py-1.5 rounded-full border border-white/10 shadow-inner">
+            <Crown size={18} className="text-yellow-400 fill-yellow-400" />
+            <span className="text-base font-bold">{highScore}</span>
           </div>
-          <button className="p-2 bg-black/20 rounded-full border border-white/10 hover:bg-black/30 transition-colors">
-            <Settings size={20} />
+          <button 
+            onClick={() => setIsSettingsOpen(true)}
+            className="p-2.5 bg-black/30 rounded-full border border-white/10 hover:bg-black/40 transition-colors shadow-inner"
+          >
+            <Settings size={22} />
           </button>
         </div>
         
-        <div className="text-6xl font-black tracking-tighter drop-shadow-lg">
+        <div className="text-7xl font-black tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] text-white">
           {score}
         </div>
       </header>
 
       {/* Grid Container */}
-      <div className="relative p-2 bg-[#5D4037] rounded-xl shadow-2xl border-4 border-[#3E2723]">
+      <div className="relative p-2.5 bg-[#5D4037] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-4 border-[#3E2723] z-10">
         <div 
           ref={gridRef}
-          className="grid grid-cols-8 gap-1 bg-[#3E2723] p-1 rounded-lg"
-          style={{ width: 'min(90vw, 400px)', height: 'min(90vw, 400px)' }}
+          className="grid grid-cols-8 gap-1 bg-[#3E2723] p-1.5 rounded-xl"
+          style={{ width: 'min(92vw, 420px)', height: 'min(92vw, 420px)' }}
         >
           {grid.map((row, rIdx) => 
             row.map((cell, cIdx) => {
@@ -384,20 +394,21 @@ export default function App() {
         </AnimatePresence>
       </div>
 
-      <div className="mt-12 w-full max-w-md flex justify-around items-center h-32 touch-none">
+      <div className="mt-8 w-full max-w-md flex justify-around items-center h-40 touch-none z-10">
         {availableShapes.map((shape, idx) => (
           <div 
             key={shape ? shape.id : `empty-${idx}`}
-            className={`relative ${shape ? 'cursor-grab active:cursor-grabbing' : ''} touch-none`}
+            className={`relative ${shape ? 'cursor-grab active:cursor-grabbing' : ''} touch-none flex items-center justify-center`}
             onMouseDown={(e) => shape && handleDragStart(e, shape, idx)}
             onTouchStart={(e) => shape && handleDragStart(e, shape, idx)}
+            style={{ width: '30%' }}
           >
             {shape ? (
               <div 
                 className="grid gap-0.5"
                 style={{
-                  gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 24px)`,
-                  gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 24px)`,
+                  gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 28px)`,
+                  gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 28px)`,
                   opacity: draggingShape?.index === idx ? 0 : 1
                 }}
               >
@@ -409,12 +420,12 @@ export default function App() {
                       gridRowStart: block.y + 1,
                     }}
                   >
-                    <WoodBlock size={24} color={shape.color} />
+                    <WoodBlock size={28} color={shape.color} />
                   </div>
                 ))}
               </div>
             ) : (
-              <div className="w-24 h-24" /> // Placeholder for used shape
+              <div className="w-20 h-20 bg-black/10 rounded-lg border border-white/5" /> // Placeholder for used shape
             )}
           </div>
         ))}
@@ -452,8 +463,44 @@ export default function App() {
         </div>
       )}
 
+      {/* Settings Modal */}
+      <AnimatePresence>
+        {isSettingsOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/70 backdrop-blur-md p-6"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-[#5D4037] p-8 rounded-3xl border-4 border-[#3E2723] shadow-2xl w-full max-w-xs flex flex-col items-center gap-6"
+            >
+              <h3 className="text-3xl font-black">SETTINGS</h3>
+              <button 
+                onClick={() => {
+                  resetGame();
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full flex items-center justify-center gap-3 bg-[#8D6E63] hover:bg-[#795548] py-4 rounded-2xl font-bold text-lg shadow-lg"
+              >
+                <RotateCcw size={20} />
+                RESTART GAME
+              </button>
+              <button 
+                onClick={() => setIsSettingsOpen(false)}
+                className="w-full bg-white/10 hover:bg-white/20 py-4 rounded-2xl font-bold text-lg border border-white/10"
+              >
+                CLOSE
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Footer */}
-      <footer className="mt-auto pt-8 pb-4 text-center text-xs text-white/40 max-w-xs leading-relaxed">
+      <footer className="mt-auto pt-4 pb-4 text-center text-[10px] text-white/30 max-w-xs leading-relaxed z-10">
         Project by Mazen Mohamed & Mostafa Ezzat - First year of secondary school - Mohamed Anwar El Sadat School
       </footer>
     </div>
