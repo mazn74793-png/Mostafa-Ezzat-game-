@@ -161,6 +161,7 @@ const AmbientParticles = () => {
 
 const GRID_SIZE = 8;
 const CELL_SIZE = 40; // Base size, will be responsive
+const DRAG_Y_OFFSET = 125; // 125px offset so finger does not cover blocks on mobile screens
 
 type Block = {
   x: number;
@@ -280,7 +281,7 @@ export default function App() {
   const [highScore, setHighScore] = useState(0);
   const [combo, setCombo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
-  const [draggingShape, setDraggingShape] = useState<{ shape: Shape, index: number, x: number, y: number, startX: number, startY: number } | null>(null);
+  const [draggingShape, setDraggingShape] = useState<{ shape: Shape, index: number, x: number, y: number, startX: number, startY: number, cellSize: number } | null>(null);
   const [clearingLines, setClearingLines] = useState<{ rows: number[], cols: number[] }>({ rows: [], cols: [] });
   const [maxCombo, setMaxCombo] = useState(0);
   const [level, setLevel] = useState(1);
@@ -380,30 +381,47 @@ export default function App() {
     });
   };
 
-  const handleDragStart = (e: React.MouseEvent | React.TouchEvent, shape: Shape, index: number) => {
+  const handleDragStart = (e: React.PointerEvent<HTMLDivElement>, shape: Shape, index: number) => {
     if (gameOver) return;
+    
+    // Only accept left mouse click or touch
+    if (e.button !== 0) return;
+    
+    // Capture pointer to continue receiving events even if the pointer leaves target
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch (err) {
+      console.warn("Could not capture pointer:", err);
+    }
+    
     playSound('drag');
     
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
-    
+    let currentCellSize = 32;
+    if (gridRef.current) {
+      const rect = gridRef.current.getBoundingClientRect();
+      currentCellSize = rect.width / GRID_SIZE;
+    }
+
     setDraggingShape({
       shape,
       index,
-      x: clientX,
-      y: clientY,
-      startX: clientX,
-      startY: clientY
+      x: e.clientX,
+      y: e.clientY,
+      startX: e.clientX,
+      startY: e.clientY,
+      cellSize: currentCellSize
     });
   };
 
-  const handleDragMove = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleDragMove = useCallback((e: PointerEvent) => {
     if (!draggingShape) return;
     
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    // Silky smooth mobile sliding requires preventing browser document bounce/scroll
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     
-    setDraggingShape(prev => prev ? { ...prev, x: clientX, y: clientY } : null);
+    setDraggingShape(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null);
   }, [draggingShape]);
 
   const handleDragEnd = useCallback(() => {
@@ -420,16 +438,15 @@ export default function App() {
     const rect = gridRef.current.getBoundingClientRect();
     const cellSize = rect.width / GRID_SIZE;
     
-    // Calculate shape dimensions
+    // Calculate shape dimensions based on the modern, scaled cell size
     const maxX = Math.max(...draggingShape.shape.blocks.map(b => b.x));
     const maxY = Math.max(...draggingShape.shape.blocks.map(b => b.y));
     const shapeWidth = (maxX + 1) * cellSize;
     const shapeHeight = (maxY + 1) * cellSize;
 
-    // The drag point (x, y) is the center of the preview
-    // We need the top-left of the shape to calculate the grid position
+    // Perfect offset centering above finger
     const dropX = draggingShape.x - rect.left - (shapeWidth / 2);
-    const dropY = (draggingShape.y - 100) - rect.top - (shapeHeight / 2);
+    const dropY = (draggingShape.y - DRAG_Y_OFFSET) - rect.top - (shapeHeight / 2);
 
     const col = Math.round(dropX / cellSize);
     const row = Math.round(dropY / cellSize);
@@ -526,20 +543,18 @@ export default function App() {
     }
 
     setDraggingShape(null);
-  }, [draggingShape, grid, score, highScore, availableShapes, handleRotate]);
+  }, [draggingShape, grid, score, highScore, availableShapes, handleRotate, combo, maxCombo, level, generateFairShapeSet]);
 
   useEffect(() => {
     if (draggingShape) {
-      window.addEventListener('mousemove', handleDragMove);
-      window.addEventListener('mouseup', handleDragEnd);
-      window.addEventListener('touchmove', handleDragMove, { passive: false });
-      window.addEventListener('touchend', handleDragEnd);
+      window.addEventListener('pointermove', handleDragMove, { passive: false });
+      window.addEventListener('pointerup', handleDragEnd);
+      window.addEventListener('pointercancel', handleDragEnd);
     }
     return () => {
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-      window.removeEventListener('touchmove', handleDragMove);
-      window.removeEventListener('touchend', handleDragEnd);
+      window.removeEventListener('pointermove', handleDragMove);
+      window.removeEventListener('pointerup', handleDragEnd);
+      window.removeEventListener('pointercancel', handleDragEnd);
     };
   }, [draggingShape, handleDragMove, handleDragEnd]);
 
@@ -579,7 +594,7 @@ export default function App() {
     const shapeHeight = (maxY + 1) * cellSize;
 
     const dropX = draggingShape.x - rect.left - (shapeWidth / 2);
-    const dropY = (draggingShape.y - 100) - rect.top - (shapeHeight / 2);
+    const dropY = (draggingShape.y - DRAG_Y_OFFSET) - rect.top - (shapeHeight / 2);
     
     const col = Math.round(dropX / cellSize);
     const row = Math.round(dropY / cellSize);
@@ -740,9 +755,8 @@ export default function App() {
             key={shape ? shape.id : `empty-${idx}`}
             whileHover={shape ? { scale: 1.05 } : {}}
             whileTap={shape ? { scale: 0.95 } : {}}
-            className={`relative ${shape ? 'cursor-pointer hover:bg-white/10 active:scale-95 bg-white/5 border border-white/5 shadow-inner' : ''} rounded-2xl h-36 touch-none flex flex-col items-center justify-center p-2 transition-colors duration-200`}
-            onMouseDown={(e) => shape && handleDragStart(e, shape, idx)}
-            onTouchStart={(e) => shape && handleDragStart(e, shape, idx)}
+            className={`relative ${shape ? 'cursor-pointer hover:bg-white/10 active:scale-95 bg-white/5 border border-white/5 shadow-inner touch-none' : ''} rounded-2xl h-32 sm:h-36 flex flex-col items-center justify-center p-2 transition-colors duration-200`}
+            onPointerDown={(e) => shape && handleDragStart(e, shape, idx)}
             style={{ width: '32%' }}
           >
             {shape ? (
@@ -790,15 +804,15 @@ export default function App() {
           className="fixed pointer-events-none z-[100]"
           style={{
             left: draggingShape.x,
-            top: draggingShape.y - 100, // Consistent offset (2.5 * cellSize approx)
-            transform: 'translate(-50%, -50%) scale(1.1)',
+            top: draggingShape.y - DRAG_Y_OFFSET, // Offset of 125px to clear fingers on small touch screens
+            transform: 'translate(-50%, -50%) scale(1.02)',
           }}
         >
           <div 
             className="grid gap-0.5"
             style={{
-              gridTemplateColumns: `repeat(${Math.max(...draggingShape.shape.blocks.map(b => b.x)) + 1}, 32px)`,
-              gridTemplateRows: `repeat(${Math.max(...draggingShape.shape.blocks.map(b => b.y)) + 1}, 32px)`,
+              gridTemplateColumns: `repeat(${Math.max(...draggingShape.shape.blocks.map(b => b.x)) + 1}, ${draggingShape.cellSize}px)`,
+              gridTemplateRows: `repeat(${Math.max(...draggingShape.shape.blocks.map(b => b.y)) + 1}, ${draggingShape.cellSize}px)`,
             }}
           >
             {draggingShape.shape.blocks.map((block, bIdx) => (
@@ -809,7 +823,7 @@ export default function App() {
                   gridRowStart: block.y + 1,
                 }}
               >
-                <WoodBlock size={32} color={draggingShape.shape.color} />
+                <WoodBlock size={draggingShape.cellSize} color={draggingShape.shape.color} />
               </div>
             ))}
           </div>
