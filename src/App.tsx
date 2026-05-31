@@ -4,8 +4,158 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crown, Settings, RotateCcw, Info } from 'lucide-react';
+import { Crown, Settings, RotateCcw, Info, RefreshCw } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+// --- Sound Synthesis Engine ---
+const playSound = (type: 'drag' | 'place' | 'clear' | 'rotate' | 'levelup' | 'gameover') => {
+  try {
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    const ctx = new AudioContextClass();
+    
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    if (type === 'drag') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(140, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(220, ctx.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    } else if (type === 'place') {
+      const db = ctx.createOscillator();
+      const gain = ctx.createGain();
+      db.connect(gain);
+      gain.connect(ctx.destination);
+      db.type = 'sine';
+      db.frequency.setValueAtTime(90, ctx.currentTime);
+      db.frequency.exponentialRampToValueAtTime(30, ctx.currentTime + 0.12);
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.12);
+      db.start();
+      db.stop(ctx.currentTime + 0.12);
+    } else if (type === 'clear') {
+      [440, 554, 659, 880].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.05);
+        gain.gain.setValueAtTime(0.12, ctx.currentTime + idx * 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + idx * 0.05 + 0.15);
+        osc.start(ctx.currentTime + idx * 0.05);
+        osc.stop(ctx.currentTime + idx * 0.05 + 0.15);
+      });
+    } else if (type === 'rotate') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(180, ctx.currentTime);
+      osc.frequency.setValueAtTime(360, ctx.currentTime + 0.04);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.08);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.08);
+    } else if (type === 'levelup') {
+      [261, 329, 392, 523, 659].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.08);
+        gain.gain.setValueAtTime(0.08, ctx.currentTime + idx * 0.08);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + idx * 0.08 + 0.3);
+        osc.start(ctx.currentTime + idx * 0.08);
+        osc.stop(ctx.currentTime + idx * 0.08 + 0.3);
+      });
+    } else if (type === 'gameover') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(120, ctx.currentTime);
+      osc.frequency.linearRampToValueAtTime(40, ctx.currentTime + 0.6);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    }
+  } catch (e) {
+    console.warn("Audio Context Synthesis blocked or unsupported", e);
+  }
+};
+
+// --- Shape Rotation Utilities ---
+const rotateShape = (shape: Shape): Shape => {
+  const rotated = shape.blocks.map(b => ({
+    x: -b.y,
+    y: b.x,
+  }));
+  const minX = Math.min(...rotated.map(b => b.x));
+  const minY = Math.min(...rotated.map(b => b.y));
+  return {
+    ...shape,
+    blocks: rotated.map(b => ({
+      x: b.x - minX,
+      y: b.y - minY,
+    }))
+  };
+};
+
+// --- Ambient Magic Forest Particle Engine ---
+const AmbientParticles = () => {
+  const [particles, setParticles] = useState<Array<{ id: number, x: number, y: number, size: number, duration: number }>>([]);
+  
+  useEffect(() => {
+    const pArray = Array.from({ length: 15 }).map((_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 4 + 2,
+      duration: Math.random() * 8 + 8
+    }));
+    setParticles(pArray);
+  }, []);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      {particles.map(p => (
+        <motion.div
+          key={p.id}
+          className="absolute rounded-full bg-amber-200/20 blur-[1px]"
+          style={{
+            left: `${p.x}%`,
+            top: `${p.y}%`,
+            width: p.size,
+            height: p.size,
+          }}
+          animate={{
+            y: ['0px', '-100px'],
+            opacity: [0, 0.5, 0],
+          }}
+          transition={{
+            duration: p.duration,
+            repeat: Infinity,
+            ease: "linear"
+          }}
+        />
+      ))}
+    </div>
+  );
+};
 
 // --- Constants & Types ---
 
@@ -24,21 +174,50 @@ type Shape = {
 };
 
 const SHAPES: Omit<Shape, 'id'>[] = [
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }] }, // 1x1
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }] }, // 1x2
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }] }, // 2x1
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] }, // 1x3
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }] }, // 3x1
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }] }, // 1x4
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }] }, // 4x1
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // 2x2
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // 3x3
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }] }, // L small
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }, // L small rot
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // L small rot
-  { color: '#D2B48C', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // L small rot
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // L large
-  { color: '#D2B48C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }] }, // L large rot
+  // Oak Light Wood Style (Orange-Beige-Yellow tones)
+  { color: '#E8C89C', blocks: [{ x: 0, y: 0 }] }, // 1x1
+  { color: '#E8C89C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }] }, // 1x2 Oak
+  { color: '#E8C89C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }] }, // 1x3 Oak
+  
+  // Mahogany Red-wood Style
+  { color: '#C05C3E', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }] }, // 2x1 Mahogany
+  { color: '#C05C3E', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // 2x2 Mahogany
+  { color: '#C05C3E', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // 3x3 Mahogany
+  
+  // Walnut Dark-Coffee Wood Style
+  { color: '#82522C', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }] }, // 3x1 Walnut
+  { color: '#82522C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }] }, // L small Walnut
+  { color: '#82522C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 1 }] }, // T shape Walnut
+  
+  // Birch Cream Wood style
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }] }, // 1x4 Birch
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }] }, // 4x1 Birch
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // L small Birch
+  
+  // Cherry Amber Wood style
+  { color: '#A64B2A', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }] }, // L small Cherry
+  { color: '#A64B2A', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // L large Cherry
+  { color: '#A64B2A', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }] }, // Plus Cherry
+  
+  // SPECIAL EXTRA INTERACTIVE SHAPES
+  { color: '#E3A857', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 2, y: 1 }] }, // Hollow Triangle Arch (Beech Wood)
+  { color: '#82522C', blocks: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }] }, // Hollow U Base
+  { color: '#D4AF37', blocks: [{ x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 2 }] }, // Diagonal Magic Step (Golden Pine Wood)
+  { color: '#C05C3E', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }] }, // Stair step
+  { color: '#A64B2A', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 }] }, // 1x5 Giant Cherry Slat
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }, { x: 0, y: 4 }] }, // 5x1 Giant Slat
+
+  // NEW EPIC SHAPES
+  { color: '#D4AF37', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 2, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // Ring hollow square (O-Shape)
+  { color: '#A64B2A', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 0 }] }, // U-Shape Arch (Cherry)
+  { color: '#C05C3E', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }] }, // Lightning bolt / Big Z (Mahogany)
+  { color: '#E8C89C', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }] }, // Small bracket / C-shape (Oak)
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }, // Line 2x2 Diagonal Step (Birch)
+  { color: '#82522C', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }] }, // Hollow Diamond (Walnut)
+  { color: '#F3E1C3', blocks: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }, { x: 0, y: 2 }] }, // Bending Branch / F-shape (Birch)
+  { color: '#E8C89C', blocks: [{ x: 1, y: 0 }, { x: 0, y: 1 }] }, // Small Dot Diagonal (Oak)
+  { color: '#A64B2A', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }] }, // Pistol / Big Corner L (Cherry)
+  { color: '#E3A857', blocks: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }, { x: 2, y: 2 }] }, // ZigZag ladder (Beech)
 ];
 
 const getRandomShape = (): Shape => {
@@ -51,29 +230,44 @@ const getRandomShape = (): Shape => {
 
 // --- Components ---
 
-const WoodBlock = ({ size, color, isGhost = false }: { size: number | string, color: string, isGhost?: boolean }) => (
-  <div
+const WoodBlock = ({ size, color, isGhost = false, isClearing = false }: { size: number | string, color: string, isGhost?: boolean, isClearing?: boolean }) => (
+  <motion.div
+    animate={isClearing ? { 
+      scale: [1, 1.2, 0], 
+      rotate: [0, 15, -15],
+      opacity: [1, 1, 0]
+    } : { scale: 1, opacity: isGhost ? 0.4 : 1 }}
+    transition={{ duration: 0.4, ease: "easeOut" }}
     style={{
       width: size,
       height: size,
       backgroundColor: color,
-      opacity: isGhost ? 0.4 : 1,
-      boxShadow: isGhost ? 'none' : 'inset -3px -3px 6px rgba(0,0,0,0.4), inset 3px 3px 6px rgba(255,255,255,0.3), 2px 2px 5px rgba(0,0,0,0.2)',
-      border: isGhost ? '1px dashed rgba(255,255,255,0.3)' : '1px solid rgba(0,0,0,0.2)',
+      boxShadow: isGhost ? 'none' : 'inset -4px -4px 8px rgba(0,0,0,0.5), inset 4px 4px 8px rgba(255,255,255,0.2), 0 4px 6px rgba(0,0,0,0.3)',
+      border: isGhost ? '1px dashed rgba(255,255,255,0.3)' : '1px solid rgba(0,0,0,0.3)',
+      backgroundImage: isGhost ? 'none' : `
+        linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(0,0,0,0.1) 100%),
+        repeating-linear-gradient(
+          45deg,
+          rgba(0,0,0,0.05) 0px,
+          rgba(0,0,0,0.05) 2px,
+          transparent 2px,
+          transparent 4px
+        )
+      `
     }}
-    className="rounded-md relative overflow-hidden"
+    className="rounded-lg relative overflow-hidden flex items-center justify-center"
   >
     {!isGhost && (
       <>
-        <div className="absolute inset-0 opacity-20 pointer-events-none" style={{
-          backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(0,0,0,0.2) 4px, rgba(0,0,0,0.2) 5px)'
-        }} />
+        {/* Wood Rings Effect */}
         <div className="absolute inset-0 opacity-10 pointer-events-none" style={{
-          backgroundImage: 'linear-gradient(to bottom right, rgba(255,255,255,0.4), transparent)'
+          background: 'radial-gradient(circle at 70% 30%, transparent 0%, rgba(0,0,0,0.4) 100%)'
         }} />
+        {/* Subtle Highlight */}
+        <div className="absolute top-0 left-0 right-0 h-1/2 bg-gradient-to-b from-white/10 to-transparent pointer-events-none" />
       </>
     )}
-  </div>
+  </motion.div>
 );
 
 export default function App() {
@@ -82,14 +276,41 @@ export default function App() {
   );
   const [availableShapes, setAvailableShapes] = useState<(Shape | null)[]>([]);
   const [score, setScore] = useState(0);
+  const [displayScore, setDisplayScore] = useState(0);
   const [highScore, setHighScore] = useState(0);
+  const [combo, setCombo] = useState(0);
   const [gameOver, setGameOver] = useState(false);
   const [draggingShape, setDraggingShape] = useState<{ shape: Shape, index: number, x: number, y: number, startX: number, startY: number } | null>(null);
   const [clearingLines, setClearingLines] = useState<{ rows: number[], cols: number[] }>({ rows: [], cols: [] });
+  const [maxCombo, setMaxCombo] = useState(0);
+  const [level, setLevel] = useState(1);
+  const [showLevelUp, setShowLevelUp] = useState<number | null>(null);
+  const [isShaking, setIsShaking] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showInfoMessage, setShowInfoMessage] = useState(false);
+  const [feedback, setFeedback] = useState<{ text: string, id: number } | null>(null);
   
   const gridRef = useRef<HTMLDivElement>(null);
+
+  // Animated Score logic
+  useEffect(() => {
+    if (displayScore < score) {
+      const timer = setTimeout(() => setDisplayScore(prev => Math.min(prev + 5, score)), 20);
+      return () => clearTimeout(timer);
+    }
+  }, [displayScore, score]);
+
+  const handleRotate = useCallback((index: number) => {
+    setAvailableShapes(prev => {
+      const shapeToRotate = prev[index];
+      if (!shapeToRotate) return prev;
+      playSound('rotate');
+      const rotated = rotateShape(shapeToRotate);
+      const updated = [...prev];
+      updated[index] = rotated;
+      return updated;
+    });
+  }, []);
 
   const generateFairShapeSet = useCallback((currentGrid: (string | null)[][]) => {
     let newShapes: Shape[] = [];
@@ -161,6 +382,7 @@ export default function App() {
 
   const handleDragStart = (e: React.MouseEvent | React.TouchEvent, shape: Shape, index: number) => {
     if (gameOver) return;
+    playSound('drag');
     
     const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
@@ -186,6 +408,14 @@ export default function App() {
 
   const handleDragEnd = useCallback(() => {
     if (!draggingShape || !gridRef.current) return;
+
+    // Check if the gesture was a brief tap/click rather than a drag
+    const dragDistance = Math.hypot(draggingShape.x - draggingShape.startX, draggingShape.y - draggingShape.startY);
+    if (dragDistance < 12) {
+      handleRotate(draggingShape.index);
+      setDraggingShape(null);
+      return;
+    }
 
     const rect = gridRef.current.getBoundingClientRect();
     const cellSize = rect.width / GRID_SIZE;
@@ -221,15 +451,51 @@ export default function App() {
         if (newGrid.every(row => row[c] !== null)) colsToClear.push(c);
       }
 
-      const points = draggingShape.shape.blocks.length + (rowsToClear.length + colsToClear.length) * 10;
-      const newScore = score + points;
+      const totalLines = rowsToClear.length + colsToClear.length;
+      
+      if (totalLines > 0) {
+        const newCombo = combo + 1;
+        setCombo(newCombo);
+        
+        let feedbackText = "Good!";
+        if (totalLines === 1) feedbackText = newCombo > 1 ? `COMBO x${newCombo}!` : "Nice!";
+        else if (totalLines === 2) feedbackText = "GREAT!";
+        else if (totalLines === 3) feedbackText = "PERFECT!";
+        else if (totalLines >= 4) feedbackText = "MASTERPIECE!";
+        
+        setFeedback({ text: feedbackText, id: Date.now() });
+        setIsShaking(true);
+        playSound('clear');
+        setTimeout(() => setIsShaking(false), 400);
+      } else {
+        setCombo(0);
+        playSound('place');
+      }
+
+      const points = draggingShape.shape.blocks.length + (totalLines * 20);
+      const comboBonus = combo > 0 ? combo * 25 : 0;
+      const newScore = score + points + comboBonus;
+      
       setScore(newScore);
+
+      // Level check
+      const nextLevel = newScore < 500 ? 1 : newScore < 1500 ? 2 : newScore < 3000 ? 3 : newScore < 5000 ? 4 : 5 + Math.floor((newScore - 5000) / 3000);
+      if (nextLevel > level) {
+        setLevel(nextLevel);
+        setShowLevelUp(nextLevel);
+        playSound('levelup');
+        setTimeout(() => setShowLevelUp(null), 2500);
+      }
+
       if (newScore > highScore) {
         setHighScore(newScore);
         localStorage.setItem('wood-puzzle-highscore', newScore.toString());
       }
+      if (combo > maxCombo) {
+        setMaxCombo(combo);
+      }
 
-      if (rowsToClear.length > 0 || colsToClear.length > 0) {
+      if (totalLines > 0) {
         setClearingLines({ rows: rowsToClear, cols: colsToClear });
         
         // Delay actual clearing for animation
@@ -260,7 +526,7 @@ export default function App() {
     }
 
     setDraggingShape(null);
-  }, [draggingShape, grid, score, highScore, availableShapes]);
+  }, [draggingShape, grid, score, highScore, availableShapes, handleRotate]);
 
   useEffect(() => {
     if (draggingShape) {
@@ -284,10 +550,19 @@ export default function App() {
     }
   }, [showInfoMessage]);
 
+  useEffect(() => {
+    if (feedback) {
+      const timer = setTimeout(() => setFeedback(null), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [feedback]);
+
   const resetGame = () => {
     const emptyGrid = Array(GRID_SIZE).fill(null).map(() => Array(GRID_SIZE).fill(null));
     setGrid(emptyGrid);
     setScore(0);
+    setCombo(0);
+    setLevel(1);
     setGameOver(false);
     setAvailableShapes(generateFairShapeSet(emptyGrid));
   };
@@ -316,6 +591,9 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#A07855] flex flex-col items-center p-4 font-sans text-white select-none overflow-hidden touch-none relative">
+      {/* Background Ambient particles */}
+      <AmbientParticles />
+
       {/* Wood Grain Texture Overlay */}
       <div className="absolute inset-0 opacity-20 pointer-events-none z-0" style={{
         backgroundImage: 'url("https://www.transparenttextures.com/patterns/wood-pattern.png")',
@@ -325,9 +603,25 @@ export default function App() {
       {/* Header */}
       <header className="w-full max-w-md flex flex-col items-center gap-1 mb-4 z-10">
         <div className="w-full flex justify-between items-center px-2">
-          <div className="flex items-center gap-1 bg-black/30 px-4 py-1.5 rounded-full border border-white/10 shadow-inner">
-            <Crown size={18} className="text-yellow-400 fill-yellow-400" />
-            <span className="text-base font-bold">{highScore}</span>
+          <div className="flex flex-col gap-1 items-start">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1 bg-black/30 px-4 py-1.5 rounded-full border border-white/10 shadow-inner">
+                <Crown size={18} className="text-yellow-400 fill-yellow-400" />
+                <span className="text-base font-bold">{highScore}</span>
+              </div>
+              <div className="bg-yellow-800/50 text-yellow-200 border border-yellow-400/20 text-xs font-black uppercase px-3 py-1.5 rounded-full shadow-md">
+                Lv. {level}
+              </div>
+            </div>
+            {combo > 0 && (
+              <motion.div 
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                className="text-xs font-bold text-yellow-300 bg-yellow-900/40 px-2 py-0.5 rounded-md border border-yellow-400/20"
+              >
+                Combo x{combo}
+              </motion.div>
+            )}
           </div>
           <div className="flex gap-2">
             <button 
@@ -345,17 +639,30 @@ export default function App() {
           </div>
         </div>
         
-        <div className="text-7xl font-black tracking-tighter drop-shadow-[0_4px_4px_rgba(0,0,0,0.5)] text-white">
-          {score}
+        <div className="text-7xl font-black tracking-tighter drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-white flex items-baseline">
+          <motion.span
+            key={displayScore}
+            initial={{ scale: 1.1, y: -5 }}
+            animate={{ scale: 1, y: 0 }}
+            className="inline-block"
+          >
+            {displayScore}
+          </motion.span>
         </div>
       </header>
 
       {/* Grid Container */}
-      <div className="relative p-2.5 bg-[#5D4037] rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-4 border-[#3E2723] z-10">
+      <motion.div 
+        animate={isShaking ? {
+          x: [-2, 2, -2, 2, 0],
+          y: [-1, 1, -1, 1, 0],
+        } : {}}
+        className="relative p-3 bg-[#5D4037] rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] border-[6px] border-[#3E2723] z-10"
+      >
         <div 
           ref={gridRef}
-          className="grid grid-cols-8 gap-1 bg-[#3E2723] p-1.5 rounded-xl"
-          style={{ width: 'min(92vw, 420px)', height: 'min(92vw, 420px)' }}
+          className="grid grid-cols-8 gap-1.5 bg-[#3E2723] p-2 rounded-2xl"
+          style={{ width: 'min(94vw, 440px)', height: 'min(94vw, 440px)' }}
         >
           {grid.map((row, rIdx) => 
             row.map((cell, cIdx) => {
@@ -365,22 +672,25 @@ export default function App() {
               return (
                 <div 
                   key={`${rIdx}-${cIdx}`}
-                  className="relative rounded-sm bg-[#2D1B18] transition-colors duration-200"
+                  className="relative rounded-lg bg-[#2D1B18] shadow-inner overflow-hidden"
                 >
                   {cell && (
-                    <motion.div
-                      initial={false}
-                      animate={isClearing ? { opacity: 0, scale: 0.8 } : { opacity: 1, scale: 1 }}
-                      transition={{ duration: 0.3 }}
-                      className="absolute inset-0"
-                    >
-                      <WoodBlock size="100%" color={cell} />
-                    </motion.div>
+                    <div className="absolute inset-0">
+                      <WoodBlock size="100%" color={cell} isClearing={isClearing} />
+                    </div>
                   )}
                   {isGhost && !cell && (
                     <div className="absolute inset-0">
                       <WoodBlock size="100%" color={draggingShape.shape.color} isGhost />
                     </div>
+                  )}
+                  {/* Grid highlight for valid drop */}
+                  {isGhost && !cell && (
+                    <motion.div 
+                      animate={{ opacity: [0.1, 0.4, 0.1] }}
+                      transition={{ repeat: Infinity, duration: 1 }}
+                      className="absolute inset-0 bg-yellow-400/20"
+                    />
                   )}
                 </div>
               );
@@ -408,42 +718,69 @@ export default function App() {
             </motion.div>
           )}
         </AnimatePresence>
+      </motion.div>
+
+      {/* Instructions for Tap-to-Rotate */}
+      <div className="mt-6 flex flex-col items-center gap-1 text-center bg-black/25 px-4 py-2 rounded-xl border border-white/5 shadow-inner z-10 max-w-xs transition-all hover:bg-black/35">
+        <span className="text-[11px] font-black tracking-wider text-yellow-300 uppercase flex items-center gap-1">
+          <RefreshCw size={10} className="animate-spin" style={{ animationDuration: '3s' }} />
+          طريقة تدوير الأشكال الجديدة
+        </span>
+        <span className="text-[12px] font-semibold text-amber-100/90 leading-tight">
+          اضغط ضغطة سريعة على أي شكل لتدويره • اسحب لوضعه!
+        </span>
+        <span className="text-[9px] text-white/50 font-mono tracking-widest uppercase">
+          Tap shapes to rotate • Drag & drop to place
+        </span>
       </div>
 
-      <div className="mt-8 w-full max-w-md flex justify-around items-center h-40 touch-none z-10">
+      <div className="mt-4 w-full max-w-md flex justify-around items-center h-44 touch-none z-10">
         {availableShapes.map((shape, idx) => (
-          <div 
+          <motion.div 
             key={shape ? shape.id : `empty-${idx}`}
-            className={`relative ${shape ? 'cursor-grab active:cursor-grabbing' : ''} touch-none flex items-center justify-center`}
+            whileHover={shape ? { scale: 1.05 } : {}}
+            whileTap={shape ? { scale: 0.95 } : {}}
+            className={`relative ${shape ? 'cursor-pointer hover:bg-white/10 active:scale-95 bg-white/5 border border-white/5 shadow-inner' : ''} rounded-2xl h-36 touch-none flex flex-col items-center justify-center p-2 transition-colors duration-200`}
             onMouseDown={(e) => shape && handleDragStart(e, shape, idx)}
             onTouchStart={(e) => shape && handleDragStart(e, shape, idx)}
-            style={{ width: '30%' }}
+            style={{ width: '32%' }}
           >
             {shape ? (
-              <div 
-                className="grid gap-0.5"
-                style={{
-                  gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 28px)`,
-                  gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 28px)`,
-                  opacity: draggingShape?.index === idx ? 0 : 1
-                }}
-              >
-                {shape.blocks.map((block, bIdx) => (
-                  <div 
-                    key={bIdx}
-                    style={{
-                      gridColumnStart: block.x + 1,
-                      gridRowStart: block.y + 1,
-                    }}
-                  >
-                    <WoodBlock size={28} color={shape.color} />
-                  </div>
-                ))}
-              </div>
+              <>
+                {/* Decorative Tiny Rotation Hint Icon */}
+                <div 
+                  className="absolute top-2 right-2 p-1 bg-black/30 border border-white/10 rounded-full z-10 shadow-sm pointer-events-none"
+                  title="Tap container to rotate"
+                >
+                  <RefreshCw size={10} className="text-yellow-400 opacity-80" />
+                </div>
+                <div 
+                  className="grid gap-1"
+                  style={{
+                    gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 28px)`,
+                    gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 28px)`,
+                    opacity: draggingShape?.index === idx ? 0 : 1
+                  }}
+                >
+                  {shape.blocks.map((block, bIdx) => (
+                    <div 
+                      key={bIdx}
+                      style={{
+                        gridColumnStart: block.x + 1,
+                        gridRowStart: block.y + 1,
+                      }}
+                    >
+                      <WoodBlock size={28} color={shape.color} />
+                    </div>
+                  ))}
+                </div>
+              </>
             ) : (
-              <div className="w-20 h-20 bg-black/10 rounded-lg border border-white/5" /> // Placeholder for used shape
+              <div className="w-24 h-24 bg-black/20 rounded-2xl border-2 border-white/5 flex items-center justify-center">
+                 <div className="w-8 h-8 rounded-full border-4 border-white/5 animate-pulse" />
+              </div>
             )}
-          </div>
+          </motion.div>
         ))}
       </div>
 
@@ -499,7 +836,7 @@ export default function App() {
                   resetGame();
                   setIsSettingsOpen(false);
                 }}
-                className="w-full flex items-center justify-center gap-3 bg-[#8D6E63] hover:bg-[#795548] py-4 rounded-2xl font-bold text-lg shadow-lg"
+                className="w-full flex items-center justify-center gap-3 bg-[#8D6E63] hover:bg-[#795548] py-4 rounded-2xl font-bold text-lg shadow-[0_4px_0_#5D4037] active:shadow-none active:translate-y-1 transition-all border border-white/10"
               >
                 <RotateCcw size={20} />
                 RESTART GAME
@@ -525,6 +862,60 @@ export default function App() {
             className="fixed top-24 left-1/2 -translate-x-1/2 z-[300] bg-white/90 text-[#3E2723] px-6 py-3 rounded-2xl shadow-2xl border border-white font-bold text-center whitespace-nowrap"
           >
             Mazen Mohamed & Mostafa Ezzat 🚀
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Feedback Message */}
+      <AnimatePresence>
+        {feedback && (
+          <motion.div
+            key={feedback.id}
+            initial={{ opacity: 0, scale: 0.2, y: 100 }}
+            animate={{ 
+              opacity: 1, 
+              scale: [1, 1.4, 1.2], 
+              y: -50,
+              rotate: [0, 5, -5, 0]
+            }}
+            exit={{ opacity: 0, scale: 2, filter: 'blur(20px)' }}
+            className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[400] pointer-events-none"
+          >
+            <span className="text-6xl font-black text-white drop-shadow-[0_8px_20px_rgba(0,0,0,1)] italic tracking-tighter uppercase whitespace-nowrap bg-gradient-to-b from-white to-yellow-200 bg-clip-text text-transparent">
+              {feedback.text}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Level Up Notification Modal */}
+      <AnimatePresence>
+        {showLevelUp !== null && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.5 }}
+            className="fixed inset-0 z-[500] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md pointer-events-none"
+          >
+            <motion.div
+              initial={{ rotate: -10, y: 50 }}
+              animate={{ rotate: 0, y: 0 }}
+              transition={{ type: "spring", stiffness: 100 }}
+              className="bg-gradient-to-br from-[#8D6E63] to-[#5D4037] p-8 rounded-2xl border-4 border-yellow-400/60 shadow-2xl text-center flex flex-col items-center gap-2"
+            >
+              <div className="text-yellow-400 font-extrabold tracking-widest text-sm uppercase animate-bounce">
+                🎉 CONGRATULATIONS 🎉
+              </div>
+              <h2 className="text-5xl font-black tracking-tight text-white drop-shadow-[0_4px_6px_rgba(0,0,0,0.6)]">
+                LEVEL UP!
+              </h2>
+              <div className="bg-yellow-400 text-[#3E2723] font-black rounded-full px-6 py-2 text-2xl mt-4 shadow-lg animate-pulse">
+                LEVEL {showLevelUp}
+              </div>
+              <p className="text-yellow-100/80 text-xs font-semibold mt-2">
+                New multi-wood designs activated!
+              </p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
