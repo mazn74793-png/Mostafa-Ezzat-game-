@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Crown, Settings, RotateCcw, Info, RefreshCw } from 'lucide-react';
+import { Crown, Settings, RotateCcw, Info, RefreshCw, Lightbulb, Sparkles } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
 // --- Sound Synthesis Engine ---
@@ -229,6 +229,121 @@ const getRandomShape = (): Shape => {
   };
 };
 
+const canPlaceShape = (currentGrid: (string | null)[][], shape: Shape, row: number, col: number) => {
+  return shape.blocks.every(block => {
+    const r = row + block.y;
+    const c = col + block.x;
+    return (
+      r >= 0 && r < GRID_SIZE &&
+      c >= 0 && c < GRID_SIZE &&
+      currentGrid[r][c] === null
+    );
+  });
+};
+
+const canShapeFitAnywhere = (currentGrid: (string | null)[][], shape: Shape): boolean => {
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (canPlaceShape(currentGrid, shape, r, c)) return true;
+    }
+  }
+  return false;
+};
+
+const generateGuaranteedFittingShape = (currentGrid: (string | null)[][]): Shape => {
+  // Find all empty cells in the grid
+  const emptyCells: {r: number, c: number}[] = [];
+  for (let r = 0; r < GRID_SIZE; r++) {
+    for (let c = 0; c < GRID_SIZE; c++) {
+      if (currentGrid[r][c] === null) {
+        emptyCells.push({ r, c });
+      }
+    }
+  }
+
+  // If the grid is completely full, we can't do anything (though that is game over)
+  if (emptyCells.length === 0) {
+    return getRandomShape();
+  }
+
+  // Choose a random starting empty cell
+  const startCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+  
+  // Let's decide a size of the helper shape: 1 to 3 blocks
+  const maxBlocks = Math.min(3, emptyCells.length);
+  const blocksCount = Math.floor(Math.random() * maxBlocks) + 1; // 1, 2, or 3 blocks
+
+  const blocks: Block[] = [{ x: 0, y: 0 }];
+  const visited = new Set<string>(['0,0']);
+  
+  // Try to grow the shape locally in empty cells
+  let currentR = startCell.r;
+  let currentC = startCell.c;
+  
+  const directions = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 }
+  ];
+
+  for (let i = 1; i < blocksCount; i++) {
+    // Find neighbors of existing blocks that are also empty in the grid
+    const candidates: { gx: number, gy: number, bx: number, by: number }[] = [];
+    
+    for (const b of blocks) {
+      const globalR = currentR + b.y;
+      const globalC = currentC + b.x;
+      
+      for (const dir of directions) {
+        const nextGlobalR = globalR + dir.dy;
+        const nextGlobalC = globalC + dir.dx;
+        
+        if (
+          nextGlobalR >= 0 && nextGlobalR < GRID_SIZE &&
+          nextGlobalC >= 0 && nextGlobalC < GRID_SIZE &&
+          currentGrid[nextGlobalR][nextGlobalC] === null
+        ) {
+          const relativeX = b.x + dir.dx;
+          const relativeY = b.y + dir.dy;
+          const key = `${relativeX},${relativeY}`;
+          
+          if (!visited.has(key)) {
+            candidates.push({ gx: nextGlobalR, gy: nextGlobalC, bx: relativeX, by: relativeY });
+          }
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      // Pick a random valid candidate block to add to the shape
+      const choice = candidates[Math.floor(Math.random() * candidates.length)];
+      blocks.push({ x: choice.bx, y: choice.by });
+      visited.add(`${choice.bx},${choice.by}`);
+    } else {
+      break;
+    }
+  }
+
+  // Normalize blocks so they are 0-indexed on top-left
+  const minX = Math.min(...blocks.map(b => b.x));
+  const minY = Math.min(...blocks.map(b => b.y));
+  const normalizedBlocks = blocks.map(b => ({
+    x: b.x - minX,
+    y: b.y - minY
+  }));
+
+  // Choose a shiny color for the helper block (gold, cyan, emerald, coral, purple)
+  const helperColors = ['#FFD54F', '#4FC3F7', '#81C784', '#FF8A65', '#BA68C8'];
+  const randomColor = helperColors[Math.floor(Math.random() * helperColors.length)];
+
+  return {
+    color: randomColor,
+    blocks: normalizedBlocks,
+    id: 'helper-' + Math.random().toString(36).substr(2, 9),
+  };
+};
+
 // --- Components ---
 
 const WoodBlock = ({ size, color, isGhost = false, isClearing = false }: { size: number | string, color: string, isGhost?: boolean, isClearing?: boolean }) => (
@@ -369,20 +484,53 @@ export default function App() {
     }
   }, [grid, availableShapes, draggingShape]);
 
-  const canPlaceShape = (currentGrid: (string | null)[][], shape: Shape, row: number, col: number) => {
-    return shape.blocks.every(block => {
-      const r = row + block.y;
-      const c = col + block.x;
-      return (
-        r >= 0 && r < GRID_SIZE &&
-        c >= 0 && c < GRID_SIZE &&
-        currentGrid[r][c] === null
-      );
+  const [hintPlacement, setHintPlacement] = useState<{ row: number, col: number, shapeIndex: number } | null>(null);
+
+  const handleSwapWithHelper = useCallback((index: number) => {
+    setAvailableShapes(prev => {
+      const updated = [...prev];
+      updated[index] = generateGuaranteedFittingShape(grid);
+      return updated;
     });
-  };
+    setFeedback({ text: "تبديل سحري! 🪄", id: Date.now() });
+    playSound('levelup');
+  }, [grid]);
+
+  const handleTriggerAllHelpers = useCallback(() => {
+    setAvailableShapes(prev => {
+      return prev.map(s => s ? generateGuaranteedFittingShape(grid) : null);
+    });
+    setFeedback({ text: "توليد قطع مساعدة! 🪄", id: Date.now() });
+    playSound('levelup');
+  }, [grid]);
+
+  const showPlacementHint = useCallback(() => {
+    // Look at available shapes
+    for (let idx = 0; idx < availableShapes.length; idx++) {
+      const shape = availableShapes[idx];
+      if (!shape) continue;
+
+      // Find first placement
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          if (canPlaceShape(grid, shape, r, c)) {
+            setHintPlacement({ row: r, col: c, shapeIndex: idx });
+            playSound('rotate');
+            setTimeout(() => {
+              setHintPlacement(null);
+            }, 3000);
+            return;
+          }
+        }
+      }
+    }
+    // If no shape can fit, we can automatically trigger a helper swap!
+    setFeedback({ text: "لا توجد قطع تناسب اللوح! جرب القطع السحرية", id: Date.now() });
+  }, [grid, availableShapes]);
 
   const handleDragStart = (e: React.PointerEvent<HTMLDivElement>, shape: Shape, index: number) => {
     if (gameOver) return;
+    setHintPlacement(null);
     
     // Only accept left mouse click or touch
     if (e.button !== 0) return;
@@ -605,7 +753,7 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[#A07855] flex flex-col items-center p-4 font-sans text-white select-none overflow-hidden touch-none relative">
+    <div className="h-[100dvh] w-full bg-[#A07855] flex flex-col justify-between items-center p-2.5 pb-2 sm:p-4 font-sans text-white select-none overflow-hidden touch-none relative">
       {/* Background Ambient particles */}
       <AmbientParticles />
 
@@ -616,7 +764,7 @@ export default function App() {
       }} />
 
       {/* Header */}
-      <header className="w-full max-w-md flex flex-col items-center gap-1 mb-4 z-10">
+      <header className="w-full max-w-md flex flex-col items-center gap-0.5 sm:gap-1 mb-1 sm:mb-2 z-10 flex-shrink-0">
         <div className="w-full flex justify-between items-center px-2">
           <div className="flex flex-col gap-1 items-start">
             <div className="flex items-center gap-2">
@@ -654,7 +802,7 @@ export default function App() {
           </div>
         </div>
         
-        <div className="text-7xl font-black tracking-tighter drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-white flex items-baseline">
+        <div className="text-5xl sm:text-7xl font-black tracking-tighter drop-shadow-[0_4px_12px_rgba(0,0,0,0.6)] text-white flex items-baseline leading-none my-0.5 sm:my-1">
           <motion.span
             key={displayScore}
             initial={{ scale: 1.1, y: -5 }}
@@ -672,17 +820,18 @@ export default function App() {
           x: [-2, 2, -2, 2, 0],
           y: [-1, 1, -1, 1, 0],
         } : {}}
-        className="relative p-3 bg-[#5D4037] rounded-3xl shadow-[0_30px_70px_rgba(0,0,0,0.6)] border-[6px] border-[#3E2723] z-10"
+        className="relative p-2 sm:p-3 bg-[#5D4037] rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] border-[4px] sm:border-[6px] border-[#3E2723] z-10 flex-shrink"
       >
         <div 
           ref={gridRef}
-          className="grid grid-cols-8 gap-1.5 bg-[#3E2723] p-2 rounded-2xl"
-          style={{ width: 'min(94vw, 440px)', height: 'min(94vw, 440px)' }}
+          className="grid grid-cols-8 gap-1 sm:gap-1.5 bg-[#3E2723] p-1.5 sm:p-2 rounded-2xl small-screen-grid"
+          style={{ width: 'min(90vw, 360px, 42vh)', height: 'min(90vw, 360px, 42vh)' }}
         >
           {grid.map((row, rIdx) => 
             row.map((cell, cIdx) => {
               const isClearing = clearingLines.rows.includes(rIdx) || clearingLines.cols.includes(cIdx);
               const isGhost = ghostPos && draggingShape?.shape.blocks.some(b => b.x + ghostPos!.col === cIdx && b.y + ghostPos!.row === rIdx);
+              const isHinted = hintPlacement && availableShapes[hintPlacement.shapeIndex]?.blocks.some(b => b.x + hintPlacement.col === cIdx && b.y + hintPlacement.row === rIdx);
               
               return (
                 <div 
@@ -706,6 +855,18 @@ export default function App() {
                       transition={{ repeat: Infinity, duration: 1 }}
                       className="absolute inset-0 bg-yellow-400/20"
                     />
+                  )}
+                  {/* Grid highlight for suggested solution hint */}
+                  {isHinted && !cell && (
+                    <motion.div 
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: [1, 1.05, 1], opacity: [0.4, 0.9, 0.4] }}
+                      transition={{ repeat: Infinity, duration: 1.2, ease: "easeInOut" }}
+                      className="absolute inset-0 bg-yellow-400/40 border-2 border-yellow-300 rounded-lg shadow-lg z-20 flex items-center justify-center"
+                      style={{ boxShadow: '0 0 12px rgba(253, 224, 71, 0.8)' }}
+                    >
+                      <Sparkles size={12} className="text-yellow-100 animate-pulse" />
+                    </motion.div>
                   )}
                 </div>
               );
@@ -735,67 +896,101 @@ export default function App() {
         </AnimatePresence>
       </motion.div>
 
-      {/* Instructions for Tap-to-Rotate */}
-      <div className="mt-6 flex flex-col items-center gap-1 text-center bg-black/25 px-4 py-2 rounded-xl border border-white/5 shadow-inner z-10 max-w-xs transition-all hover:bg-black/35">
-        <span className="text-[11px] font-black tracking-wider text-yellow-300 uppercase flex items-center gap-1">
-          <RefreshCw size={10} className="animate-spin" style={{ animationDuration: '3s' }} />
-          طريقة تدوير الأشكال الجديدة
-        </span>
-        <span className="text-[12px] font-semibold text-amber-100/90 leading-tight">
-          اضغط ضغطة سريعة على أي شكل لتدويره • اسحب لوضعه!
-        </span>
-        <span className="text-[9px] text-white/50 font-mono tracking-widest uppercase">
-          Tap shapes to rotate • Drag & drop to place
-        </span>
+      {/* Instructions & Smart AI Help Tools */}
+      <div className="mt-1 sm:mt-4 flex flex-col items-center gap-1.5 text-center bg-black/35 px-4 py-2 rounded-2xl border border-yellow-500/20 shadow-lg z-10 max-w-sm transition-all hover:bg-black/45 small-screen-card">
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] font-black tracking-wider text-yellow-300 uppercase flex items-center gap-1">
+            <RefreshCw size={10} className="animate-spin" style={{ animationDuration: '3s' }} />
+            اضغط لتغيير اتجاه الشكل
+          </span>
+          <div className="w-[1px] h-3 bg-white/10" />
+          <span className="text-[10px] font-black tracking-wider text-green-300 uppercase flex items-center gap-1">
+            <Sparkles size={10} className="animate-pulse" />
+            مساعد اللعب الذكي
+          </span>
+        </div>
+        
+        <div className="flex gap-2.5 mt-0.5">
+          <button
+            onClick={showPlacementHint}
+            className="flex items-center gap-1.5 px-3 py-1 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-400/40 text-yellow-300 rounded-lg font-black text-[11px] shadow-md transition-all active:scale-95 cursor-pointer"
+          >
+            <Lightbulb size={11} />
+            تلميح للحل 💡
+          </button>
+          
+          <button
+            onClick={handleTriggerAllHelpers}
+            className="flex items-center gap-1.5 px-3 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 rounded-lg font-black text-[11px] shadow-md transition-all active:scale-95 cursor-pointer"
+          >
+            <Sparkles size={11} />
+            توليد أشكال مساعدة 🪄
+          </button>
+        </div>
       </div>
 
-      <div className="mt-4 w-full max-w-md flex justify-around items-center h-44 touch-none z-10">
-        {availableShapes.map((shape, idx) => (
-          <motion.div 
-            key={shape ? shape.id : `empty-${idx}`}
-            whileHover={shape ? { scale: 1.05 } : {}}
-            whileTap={shape ? { scale: 0.95 } : {}}
-            className={`relative ${shape ? 'cursor-pointer hover:bg-white/10 active:scale-95 bg-white/5 border border-white/5 shadow-inner touch-none' : ''} rounded-2xl h-32 sm:h-36 flex flex-col items-center justify-center p-2 transition-colors duration-200`}
-            onPointerDown={(e) => shape && handleDragStart(e, shape, idx)}
-            style={{ width: '32%' }}
-          >
-            {shape ? (
-              <>
-                {/* Decorative Tiny Rotation Hint Icon */}
-                <div 
-                  className="absolute top-2 right-2 p-1 bg-black/30 border border-white/10 rounded-full z-10 shadow-sm pointer-events-none"
-                  title="Tap container to rotate"
-                >
-                  <RefreshCw size={10} className="text-yellow-400 opacity-80" />
-                </div>
-                <div 
-                  className="grid gap-1"
-                  style={{
-                    gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 28px)`,
-                    gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 28px)`,
-                    opacity: draggingShape?.index === idx ? 0 : 1
-                  }}
-                >
-                  {shape.blocks.map((block, bIdx) => (
-                    <div 
-                      key={bIdx}
-                      style={{
-                        gridColumnStart: block.x + 1,
-                        gridRowStart: block.y + 1,
+      <div className="mt-1 sm:mt-4 w-full max-w-md flex justify-around items-center h-28 sm:h-36 touch-none z-10 small-screen-tray">
+        {availableShapes.map((shape, idx) => {
+          const isStuck = shape && !canShapeFitAnywhere(grid, shape);
+          return (
+            <motion.div 
+              key={shape ? shape.id : `empty-${idx}`}
+              whileHover={shape ? { scale: 1.05 } : {}}
+              whileTap={shape ? { scale: 0.95 } : {}}
+              className={`relative ${shape ? 'cursor-pointer hover:bg-white/10 active:scale-95 bg-white/5 border border-white/5 shadow-inner touch-none' : 'bg-black/10 border border-white/5 shadow-inner'} rounded-2xl h-24 sm:h-32 flex flex-col items-center justify-center p-2 transition-colors duration-200 small-screen-slot`}
+              onPointerDown={(e) => shape && handleDragStart(e, shape, idx)}
+              style={{ width: '32%' }}
+            >
+              {shape ? (
+                <>
+                  {/* Decorative Tiny Rotation Hint Icon */}
+                  <div 
+                    className="absolute top-2 right-2 p-1 bg-black/30 border border-white/10 rounded-full z-10 shadow-sm pointer-events-none"
+                    title="Tap container to rotate"
+                  >
+                    <RefreshCw size={10} className="text-yellow-400 opacity-80" />
+                  </div>
+                  
+                  {isStuck && (
+                    <button
+                      onPointerDown={(e) => {
+                        e.stopPropagation();
+                        handleSwapWithHelper(idx);
                       }}
+                      className="absolute -bottom-2 bg-gradient-to-r from-amber-500 to-yellow-400 border border-yellow-300 text-black text-[9px] font-black px-2 py-1 rounded-full shadow-lg z-25 flex items-center gap-0.5 hover:scale-105 active:scale-95 animate-bounce transition-transform cursor-pointer"
                     >
-                      <WoodBlock size={28} color={shape.color} />
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="w-24 h-24 bg-black/20 rounded-2xl border-2 border-white/5 flex items-center justify-center">
-                 <div className="w-8 h-8 rounded-full border-4 border-white/5 animate-pulse" />
-              </div>
-            )}
-          </motion.div>
-        ))}
+                      <Sparkles size={8} />
+                      حل سحري ✨
+                    </button>
+                  )}
+
+                  <div 
+                    className="grid gap-1"
+                    style={{
+                      gridTemplateColumns: `repeat(${Math.max(...shape.blocks.map(b => b.x)) + 1}, 20px)`,
+                      gridTemplateRows: `repeat(${Math.max(...shape.blocks.map(b => b.y)) + 1}, 20px)`,
+                      opacity: draggingShape?.index === idx ? 0 : 1
+                    }}
+                  >
+                    {shape.blocks.map((block, bIdx) => (
+                      <div 
+                        key={bIdx}
+                        style={{
+                          gridColumnStart: block.x + 1,
+                          gridRowStart: block.y + 1,
+                        }}
+                      >
+                        <WoodBlock size={20} color={shape.color} />
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="w-8 h-8 rounded-full border-4 border-white/10 animate-pulse" />
+              )}
+            </motion.div>
+          );
+        })}
       </div>
 
       {/* Dragging Preview */}
@@ -935,7 +1130,7 @@ export default function App() {
       </AnimatePresence>
 
       {/* Footer */}
-      <footer className="mt-auto pt-4 pb-4 text-center text-[10px] text-white/30 max-w-xs leading-relaxed z-10">
+      <footer className="mt-auto pt-1 pb-1 sm:pt-4 sm:pb-4 text-center text-[9px] sm:text-[10px] text-white/30 max-w-xs leading-relaxed z-10 flex-shrink-0 small-screen-hide">
         Project by Mazen Mohamed & Mostafa Ezzat - First year of secondary school - Mohamed Anwar El Sadat School
       </footer>
     </div>

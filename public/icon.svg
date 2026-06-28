@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Rounded elegant wood background -->
+  <rect width="512" height="512" rx="128" fill="#A07855" />
+  
+  <!-- Subtle inner wood border -->
+  <rect x="24" y="24" width="464" height="464" rx="104" fill="none" stroke="#5D4037" stroke-width="12" opacity="0.4" />
+  
+  <!-- 3D style Grid Blocks representing Wood Block Puzzle -->
+  <g transform="translate(96, 96)">
+    <!-- Main L Shape Wood Block -->
+    <g transform="translate(0, 0)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#E8C89C" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+    <g transform="translate(0, 110)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#E8C89C" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+    <g transform="translate(110, 110)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#E8C89C" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+    
+    <!-- Separate Mahogany Block -->
+    <g transform="translate(220, 0)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#C05C3E" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+    <g transform="translate(220, 110)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#E3A857" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+    <g transform="translate(110, 220)">
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="#A64B2A" stroke="#3E2723" stroke-width="4" />
+      <rect x="0" y="0" width="100" height="100" rx="20" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="4" clip-path="polygon(0 0, 100 0, 0 100)" />
+    </g>
+  </g>
+
+  <!-- Crown Icon at Top-Left to indicate High Score -->
+  <g transform="translate(48, 48) scale(1.5)">
+    <path d="M12 2L2 22h20L12 2z" fill="none" />
+    <path d="M2 4l3 12h14l3-12-6 7-4-7-4 7-6-7z" fill="#FFD54F" stroke="#3E2723" stroke-width="1.5" stroke-linejoin="round" />
+    <circle cx="2" cy="4" r="1.5" fill="#FFD54F" stroke="#3E2723" stroke-width="1" />
+    <circle cx="12" cy="4" r="1.5" fill="#FFD54F" stroke="#3E2723" stroke-width="1" />
+    <circle cx="22" cy="4" r="1.5" fill="#FFD54F" stroke="#3E2723" stroke-width="1" />
+  </g>
+</svg>

@@ -4,9 +4,16 @@
   "description": "Premium Wood Block Puzzle Game by Mazen Mohamed & Mostafa Ezzat",
   "start_url": "/",
   "display": "standalone",
+  "orientation": "portrait",
   "background_color": "#A07855",
   "theme_color": "#A07855",
   "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
     {
       "src": "https://placehold.co/192x192/A07855/white.png?text=WP",
       "sizes": "192x192",

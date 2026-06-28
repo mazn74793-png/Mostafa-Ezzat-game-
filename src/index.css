@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+@media (max-height: 720px) {
+  .small-screen-hide {
+    display: none !important;
+  }
+  .small-screen-grid {
+    width: min(88vw, 290px, 34vh) !important;
+    height: min(88vw, 290px, 34vh) !important;
+  }
+  .small-screen-tray {
+    height: 80px !important;
+    margin-top: 4px !important;
+  }
+  .small-screen-slot {
+    height: 72px !important;
+  }
+  .small-screen-card {
+    padding: 4px 10px !important;
+    margin-top: 4px !important;
+    gap: 4px !important;
+  }
+}

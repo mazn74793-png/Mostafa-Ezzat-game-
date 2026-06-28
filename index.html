@@ -7,10 +7,36 @@
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#A07855" />
     <script>
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js');
-        });
+      // Actively unregister any registered service workers to prevent stale cached files/bundles
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then((registrations) => {
+            for (const registration of registrations) {
+              registration.unregister().then((success) => {
+                if (success) console.log('Service worker unregistered successfully.');
+              });
+            }
+          }).catch((err) => {
+            console.warn('Error fetching service worker registrations:', err);
+          });
+        }
+      } catch (e) {
+        console.warn('Service worker unregistration failed:', e);
+      }
+
+      // Actively clean up any service worker caches to prevent outdated JS code from loading
+      try {
+        if ('caches' in window) {
+          caches.keys().then((keys) => {
+            return Promise.all(keys.map(key => caches.delete(key)));
+          }).then(() => {
+            console.log('All caches cleared successfully.');
+          }).catch((err) => {
+            console.warn('Error clearing caches:', err);
+          });
+        }
+      } catch (e) {
+        console.warn('Cache clearing failed:', e);
       }
     </script>
   </head>
